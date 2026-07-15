@@ -31,10 +31,10 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  .app { display: flex; height: 100vh; width: 100vw; }
+  .app { display: flex; height: 100vh; width: 100vw; position: relative; }
 
   /* Sidebar */
-  .sidebar { width: 260px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; transition: width .2s, opacity .2s; }
+  .sidebar { width: 260px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; transition: width .2s, opacity .2s, left .3s ease; z-index: 1000;}
   .sidebar.collapsed { width: 0; opacity: 0; overflow: hidden; border-right: none; }
   .sidebar-top { padding: 12px; display: flex; align-items: center; justify-content: space-between; }
   .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; padding: 8px; }
@@ -131,7 +131,7 @@
   .composer-hint { text-align: center; font-size: 11px; color: #b8b8bc; margin-top: 8px; }
 
   /* Drawers */
-  .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; z-index: 20; align-items: flex-start; justify-content: flex-end; }
+  .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; z-index: 2000; align-items: flex-start; justify-content: flex-end; }
   .drawer-overlay.open { display: flex; }
   .drawer { width: 360px; max-width: 92vw; height: 100%; background: #fff; border-left: 1px solid var(--border); padding: 22px; overflow-y: auto; box-shadow: -4px 0 24px rgba(0,0,0,.05); }
   .drawer.wide { width: 650px; }
@@ -172,15 +172,22 @@
   .embed-mock-footer { padding: 12px; border-top: 1px solid #e5e5e6; background: #ffffff; }
   .embed-mock-input { background: #ffffff; border: 1px solid #d9d9dc; border-radius: 20px; padding: 8px 12px; font-size: 12px; color: #9a9a9e; }
   
+  /* Mobile & Embedded Specific Overrides */
+  .sidebar-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 999; display: none; opacity: 0; transition: opacity 0.3s; }
+  .sidebar-backdrop.visible { display: block; opacity: 1; }
+
   @media (max-width: 768px) {
+    .sidebar { position: fixed; top: 0; left: -280px; height: 100%; box-shadow: 4px 0 24px rgba(0,0,0,0.1); }
+    .sidebar.mobile-open { left: 0; }
+    #expandBtn { display: inline-flex !important; }
     .preview-layout { flex-direction: column; }
     .preview-visual { width: 100%; }
     .drawer.wide { width: 100%; }
   }
 
-  /* Embedded Mode Specific Overrides */
-  body.embedded .sidebar { display: none !important; }
-  body.embedded .topbar-left #expandBtn { display: none !important; }
+  body.embedded .sidebar { position: fixed; top: 0; left: -280px; height: 100%; box-shadow: 4px 0 24px rgba(0,0,0,0.1); display: flex !important; }
+  body.embedded .sidebar.mobile-open { left: 0; }
+  body.embedded #expandBtn { display: inline-flex !important; }
   body.embedded .status-chip.hide-mobile { display: none; }
   body.embedded .composer-hint { display: none; }
   body.embedded .app { background: transparent; }
@@ -192,10 +199,13 @@
 <body>
 <div class="app">
 
+  <!-- Mobile Overlay Backdrop -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
   <div class="sidebar" id="sidebar">
     <div class="sidebar-top">
       <div class="brand"><span class="msym">smart_toy</span> Assistant</div>
-      <button class="icon-btn" id="collapseBtn" title="Collapse sidebar"><span class="msym">left_panel_close</span></button>
+      <button class="icon-btn" id="collapseBtn" title="Close menu"><span class="msym">left_panel_close</span></button>
     </div>
     <button class="new-chat-btn" id="newChatBtn"><span class="msym">add</span> New Chat</button>
     
@@ -210,18 +220,18 @@
     </div>
     
     <div class="sidebar-footer">
-      <div class="avatar"><span class="msym" style="font-size: 16px;">robot_2</span></div>
-      <div style="font-size:13px;">100% Local Processing</div>
+      <div class="avatar"><span class="msym" style="font-size: 16px;">lock</span></div>
+      <div style="font-size:13px; line-height: 1.2;">AES-256 Encrypted<br><span style="font-size:11px; opacity:0.7;">100% Local Processing</span></div>
     </div>
   </div>
 
   <div class="main">
     <div class="protocol-warning" id="protocolWarning">
-      Notice: Running directly via file:// may block the AI models from loading. Please host on a server (e.g., GitHub Pages) or use a Local Server.
+      Notice: Running directly via file:// blocks the AI models. Please host on a server (e.g., GitHub Pages) or use Localhost.
     </div>
     <div class="topbar">
       <div class="topbar-left">
-        <button class="icon-btn" id="expandBtn" style="display:none;" title="Expand sidebar"><span class="msym">left_panel_open</span></button>
+        <button class="icon-btn" id="expandBtn" style="display:none;" title="Open Menu"><span class="msym">menu</span></button>
         <div class="mode-select-wrapper" id="appModeContainer">
           <select class="mode-select" id="appModeSelect">
             <option value="chat">Standard Chat</option>
@@ -256,7 +266,7 @@
           <textarea id="inputBox" placeholder="Ask anything..." rows="1"></textarea>
           <button class="composer-icon-btn send" id="sendBtn" disabled title="Send"><span class="msym">arrow_upward</span></button>
         </div>
-        <div class="composer-hint">Processing happens entirely inside your browser. No data is sent to servers.</div>
+        <div class="composer-hint">Processing happens entirely inside your browser. History is AES-256 encrypted locally.</div>
       </div>
     </div>
   </div>
@@ -361,29 +371,186 @@
 
 <script>
 // =====================================================================
-// INITIALIZATION & SAFE STORAGE
+// AES-256-GCM LOCAL STORAGE ENCRYPTION (Web Crypto API)
+// =====================================================================
+const STORAGE_KEY = 'ai_local_sessions_enc';
+const KEY_STORAGE = 'ai_crypto_jwk';
+
+// Helper: Convert ArrayBuffer <-> Base64 securely without callstack overflow
+function bufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+function base64ToBuffer(base64) {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+async function getCryptoKey() {
+  let jwkStr = localStorage.getItem(KEY_STORAGE);
+  if (!jwkStr) {
+    const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+    const jwk = await window.crypto.subtle.exportKey("jwk", key);
+    localStorage.setItem(KEY_STORAGE, JSON.stringify(jwk));
+    return key;
+  }
+  return await window.crypto.subtle.importKey("jwk", JSON.parse(jwkStr), { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+}
+
+async function encryptData(dataObj) {
+  const key = await getCryptoKey();
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(JSON.stringify(dataObj));
+  const encrypted = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, encoded);
+  
+  // Pack IV + Encrypted Data
+  const pack = new Uint8Array(iv.length + encrypted.byteLength);
+  pack.set(iv, 0);
+  pack.set(new Uint8Array(encrypted), iv.length);
+  return bufferToBase64(pack);
+}
+
+async function decryptData(b64Str) {
+  try {
+    const key = await getCryptoKey();
+    const pack = new Uint8Array(base64ToBuffer(b64Str));
+    const iv = pack.slice(0, 12);
+    const data = pack.slice(12);
+    const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, data);
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  } catch (e) {
+    console.error("Decryption failed", e);
+    return [];
+  }
+}
+
+// =====================================================================
+// INITIALIZATION & SESSION MANAGEMENT
 // =====================================================================
 if (window.location.protocol === 'file:') {
   document.getElementById('protocolWarning').style.display = 'block';
 }
 
-const STORAGE_KEY = 'ai_local_sessions';
 const MAX_SESSIONS = 10;
 let sessions = [];
-try {
-  sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  if (!Array.isArray(sessions)) sessions = [];
-} catch (e) {
-  sessions = [];
-}
-
 let currentSessionId = generateId();
 let history = []; 
 
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); }
 
+async function initApp() {
+  const encData = localStorage.getItem(STORAGE_KEY);
+  if (encData) {
+    sessions = await decryptData(encData);
+  }
+  renderSidebar();
+  
+  if (sessions.length > 0 && !isEmbedded) {
+    loadSession(sessions[0].id);
+  }
+}
+
+async function saveSession() {
+  if (history.length === 0) return; 
+  
+  const idx = sessions.findIndex(s => s.id === currentSessionId);
+  const firstUser = history.find(h => h.role === 'user');
+  const title = firstUser ? firstUser.content.substring(0, 26) + '...' : 'Conversation';
+  
+  const sessionData = { id: currentSessionId, title, timestamp: Date.now(), history };
+  
+  if (idx >= 0) {
+    sessions[idx] = sessionData;
+  } else {
+    sessions.unshift(sessionData); 
+    if (sessions.length > MAX_SESSIONS) sessions.pop(); 
+  }
+  
+  try {
+    const encryptedB64 = await encryptData(sessions);
+    localStorage.setItem(STORAGE_KEY, encryptedB64);
+  } catch (e) {
+    console.warn("Storage write failed.");
+  }
+  renderSidebar();
+}
+
+function loadSession(id) {
+  if (busyLocal) { addSystem('Please wait for the AI to finish typing or click Stop.'); return; }
+  const s = sessions.find(x => x.id === id);
+  if (s) {
+    currentSessionId = s.id;
+    history = s.history || [];
+    renderChatHistory();
+    renderSidebar();
+    closeSidebarMobile();
+  }
+}
+
+async function deleteSession(id) {
+  sessions = sessions.filter(s => s.id !== id);
+  try {
+    const encryptedB64 = await encryptData(sessions);
+    localStorage.setItem(STORAGE_KEY, encryptedB64);
+  } catch(e) {}
+  
+  if (currentSessionId === id) {
+    createNewSession();
+  } else {
+    renderSidebar();
+  }
+}
+
+function createNewSession() {
+  if (busyLocal) { addSystem('Please wait for the AI to finish typing or click Stop.'); return; }
+  history = [];
+  currentSessionId = generateId();
+  renderChatHistory();
+  renderSidebar();
+  closeSidebarMobile();
+}
+
+function renderSidebar() {
+  const list = document.getElementById('recentsList');
+  list.innerHTML = '';
+  
+  if (sessions.length === 0 && history.length === 0) {
+    list.innerHTML = '<div style="padding:10px 22px; font-size:12px; color:var(--muted)">No previous chats</div>';
+    return;
+  }
+
+  sessions.forEach(s => {
+    const el = document.createElement('div');
+    el.className = 'recent-item' + (s.id === currentSessionId ? ' active' : '');
+    
+    const titleArea = document.createElement('div');
+    titleArea.className = 'recent-title';
+    titleArea.innerHTML = `<span class="msym" style="font-size:16px;">chat_bubble</span> <span>${s.title}</span>`;
+    titleArea.onclick = () => loadSession(s.id);
+    
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-btn';
+    delBtn.title = 'Delete Chat';
+    delBtn.innerHTML = '<span class="msym" style="font-size:16px;">delete</span>';
+    delBtn.onclick = (e) => { e.stopPropagation(); deleteSession(s.id); };
+    
+    el.appendChild(titleArea);
+    el.appendChild(delBtn);
+    list.appendChild(el);
+  });
+}
+
 // =====================================================================
-// EMBEDDED MODE DETECTION & THEMING
+// EMBEDDED MODE DETECTION & RESPONSIVE UI
 // =====================================================================
 const urlParams = new URLSearchParams(window.location.search);
 const isEmbedded = urlParams.get('embedded') === 'true';
@@ -397,14 +564,40 @@ if (isEmbedded) {
   
   if (title) {
     const headerLeft = document.getElementById('appModeContainer');
-    if (headerLeft) {
-      headerLeft.innerHTML = `<div style="font-weight:600; padding-left:4px;">${decodeURIComponent(title)}</div>`;
-    }
+    if (headerLeft) headerLeft.innerHTML = `<div style="font-weight:600; padding-left:4px;">${decodeURIComponent(title)}</div>`;
   }
   if (accent) document.documentElement.style.setProperty('--accent', decodeURIComponent(accent));
   if (bg) document.documentElement.style.setProperty('--bg', decodeURIComponent(bg));
   if (ub) document.documentElement.style.setProperty('--bubble-user', decodeURIComponent(ub));
 }
+
+const sidebar = document.getElementById('sidebar');
+const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+
+document.getElementById('expandBtn').addEventListener('click', () => {
+  if (isEmbedded || window.innerWidth <= 768) {
+    sidebar.classList.add('mobile-open');
+    sidebarBackdrop.classList.add('visible');
+  } else {
+    sidebar.classList.remove('collapsed');
+    document.getElementById('expandBtn').style.display = 'none';
+  }
+});
+
+function closeSidebarMobile() {
+  sidebar.classList.remove('mobile-open');
+  sidebarBackdrop.classList.remove('visible');
+}
+
+sidebarBackdrop.addEventListener('click', closeSidebarMobile);
+document.getElementById('collapseBtn').addEventListener('click', () => {
+  if (isEmbedded || window.innerWidth <= 768) {
+    closeSidebarMobile();
+  } else {
+    sidebar.classList.add('collapsed');
+    document.getElementById('expandBtn').style.display = 'inline-flex';
+  }
+});
 
 // =====================================================================
 // WORKER SOURCE — Off-thread inference using Transformers.js v3.1.2
@@ -520,7 +713,7 @@ function spawnWorker() {
   workerUrl = URL.createObjectURL(blob);
   worker = new Worker(workerUrl, { type: 'module' });
   worker.onmessage = handleWorkerMessage;
-  worker.onerror = (e) => addSystem('Engine Error: ' + (e.message || 'Worker module failed. Check console.'));
+  worker.onerror = (e) => addSystem('Engine Error: ' + (e.message || 'Worker module failed.'));
 }
 
 function restartWorker(reason) {
@@ -551,97 +744,9 @@ function restartWorker(reason) {
   if (reason) addSystem(reason);
 }
 
+// Start everything
+initApp();
 spawnWorker();
-
-// ---------- Session Storage Logic ----------
-function saveSession() {
-  if (history.length === 0 || isEmbedded) return; 
-  
-  const idx = sessions.findIndex(s => s.id === currentSessionId);
-  const firstUser = history.find(h => h.role === 'user');
-  const title = firstUser ? firstUser.content.substring(0, 26) + '...' : 'Conversation';
-  
-  const sessionData = { id: currentSessionId, title, timestamp: Date.now(), history };
-  
-  if (idx >= 0) {
-    sessions[idx] = sessionData;
-  } else {
-    sessions.unshift(sessionData); 
-    if (sessions.length > MAX_SESSIONS) sessions.pop(); 
-  }
-  
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-  } catch (e) {
-    console.warn("Could not save to localStorage (quota exceeded or disabled).");
-  }
-  
-  renderSidebar();
-}
-
-function loadSession(id) {
-  if (busyLocal) { addSystem('Please wait for the AI to finish typing or click Stop.'); return; }
-  const s = sessions.find(x => x.id === id);
-  if (s) {
-    currentSessionId = s.id;
-    history = s.history || [];
-    renderChatHistory();
-    renderSidebar();
-  }
-}
-
-function deleteSession(id) {
-  sessions = sessions.filter(s => s.id !== id);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-  } catch(e) {}
-  
-  if (currentSessionId === id) {
-    createNewSession();
-  } else {
-    renderSidebar();
-  }
-}
-
-function createNewSession() {
-  if (busyLocal) { addSystem('Please wait for the AI to finish typing or click Stop.'); return; }
-  history = [];
-  currentSessionId = generateId();
-  renderChatHistory();
-  renderSidebar();
-}
-
-function renderSidebar() {
-  if(isEmbedded) return;
-  const list = document.getElementById('recentsList');
-  list.innerHTML = '';
-  
-  if (sessions.length === 0 && history.length === 0) {
-    list.innerHTML = '<div style="padding:10px 22px; font-size:12px; color:var(--muted)">No previous chats</div>';
-    return;
-  }
-
-  sessions.forEach(s => {
-    const el = document.createElement('div');
-    el.className = 'recent-item' + (s.id === currentSessionId ? ' active' : '');
-    
-    const titleArea = document.createElement('div');
-    titleArea.className = 'recent-title';
-    titleArea.innerHTML = `<span class="msym" style="font-size:16px;">chat_bubble</span> <span>${s.title}</span>`;
-    titleArea.onclick = () => loadSession(s.id);
-    
-    const delBtn = document.createElement('button');
-    delBtn.className = 'delete-btn';
-    delBtn.title = 'Delete Chat';
-    delBtn.innerHTML = '<span class="msym" style="font-size:16px;">delete</span>';
-    delBtn.onclick = (e) => { e.stopPropagation(); deleteSession(s.id); };
-    
-    el.appendChild(titleArea);
-    el.appendChild(delBtn);
-    list.appendChild(el);
-  });
-}
-renderSidebar();
 
 // ---------- App Modes & Prompts ----------
 const APP_MODES = {
@@ -692,25 +797,18 @@ function setAppMode(modeKey) {
     quickCardsContainer.appendChild(div);
   });
 }
-modeSelect.addEventListener('change', (e) => setAppMode(e.target.value));
-setAppMode('chat'); 
+if(modeSelect) {
+  modeSelect.addEventListener('change', (e) => setAppMode(e.target.value));
+  setAppMode('chat'); 
+}
 
-// ---------- UI Drawer Interactions ----------
-const sidebar = document.getElementById('sidebar');
-document.getElementById('collapseBtn').addEventListener('click', () => {
-  sidebar.classList.add('collapsed');
-  document.getElementById('expandBtn').style.display = 'inline-flex';
-});
-document.getElementById('expandBtn').addEventListener('click', () => {
-  sidebar.classList.remove('collapsed');
-  document.getElementById('expandBtn').style.display = 'none';
-});
-
+// ---------- UI Drawers ----------
 function wireDrawer(navBtnId, overlayId, closeBtnId, onOpen) {
   const overlay = document.getElementById(overlayId);
   document.getElementById(navBtnId).addEventListener('click', () => {
     overlay.classList.add('open');
-    if(onOpen) onOpen(); // Safe call when opened
+    closeSidebarMobile();
+    if(onOpen) onOpen(); 
   });
   document.getElementById(closeBtnId).addEventListener('click', () => overlay.classList.remove('open'));
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
@@ -855,7 +953,7 @@ function appendFooterToActiveTypingContainer(text, timestamp) {
     
     footer.appendChild(speakBtn);
     activeTypingContainer.appendChild(footer);
-    activeTypingContainer = null; // Detach
+    activeTypingContainer = null; 
   }
 }
 
@@ -1055,7 +1153,6 @@ function sendMessage(text) {
   const payload = [];
   if (sysPrompt) payload.push({ role: 'system', content: sysPrompt });
   
-  // Format for Transformers.js
   const formattedHistory = trimmedHistory.map(h => ({ role: h.role, content: h.content }));
   payload.push(...formattedHistory);
   
@@ -1152,14 +1249,12 @@ const mockTitleText = document.getElementById('mockTitleText');
 const mockUserBubble = document.getElementById('mockUserBubble');
 const embedCodeOutput = document.getElementById('embedCodeOutput');
 
-// Call this safely once defined
 function updatePreviewAndCode() {
   const title = widgetTitleInput.value || 'AI Assistant';
   const accent = widgetAccentInput.value;
   const bg = widgetBgInput.value;
   const ub = widgetUserBubbleInput.value;
   
-  // Update Live Preview Styles
   mockTitleText.textContent = title;
   mockHeader.style.background = accent;
   mockBody.style.background = bg;
@@ -1167,7 +1262,6 @@ function updatePreviewAndCode() {
   mockContainer.style.background = bg;
   mockUserBubble.style.background = ub;
 
-  // Generate URL parameters dynamically based on actual host location
   const baseUrl = window.location.href.split('?')[0].split('#')[0]; 
   const params = new URLSearchParams();
   params.set('embedded', 'true');
@@ -1226,12 +1320,10 @@ function updatePreviewAndCode() {
   embedCodeOutput.value = snippet.trim();
 }
 
-// Bind inputs
 [widgetTitleInput, widgetAccentInput, widgetBgInput, widgetUserBubbleInput].forEach(el => {
   el.addEventListener('input', updatePreviewAndCode);
 });
 
-// Copy button
 document.getElementById('copyEmbedBtn').addEventListener('click', () => {
   embedCodeOutput.select();
   document.execCommand('copy');
@@ -1240,10 +1332,9 @@ document.getElementById('copyEmbedBtn').addEventListener('click', () => {
   setTimeout(() => btn.textContent = 'Copy Code', 2000);
 });
 
-// Initialize widget preview so it's not blank if opened first
+// Init on load
 updatePreviewAndCode();
 
-// Listener for parent window when in embedded mode
 window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'ASSISTANT_SEND' && e.data.text) {
     sendMessage(e.data.text);
